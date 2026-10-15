@@ -49,7 +49,10 @@ def reload_keys():
     OR_KEY = get_secret("OPENROUTER_API_KEY")
     OA_KEY = get_secret("OPENAI_API_KEY")
 
-# --------------------------------------------------------------------------- Jev
+# --------------------------------------------------------------------------- Jev (free: OpenRouter LLM replaces TypeSafe)
+# Set JEV_MODEL to another OpenRouter id if you like. ":free" models cost $0.
+JEV_MODEL = os.getenv("JEV_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+
 QUESTIONS = {
     "category": {"type": "choice", "instructions": "What kind of request is this?",
                  "criteria": {"mac_command": "asks the computer to do something",
@@ -106,21 +109,80 @@ def split_questions():
 SPLIT_QUESTIONS = split_questions()
 
 
+def _questions_prompt(questions, text):
+    """Describe every question once so one LLM call can answer them all as JSON."""
+    lines = [
+        "You classify a voice command for a Mac assistant. Answer EVERY question below.",
+        "Return ONLY a JSON object: keys are question ids, values are objects.",
+        "For type=choice: {\"choice\": one of the criteria keys, \"confidence\": 0..1}",
+        "For type=noul: {\"noul\": probability 0..1 that the answer is YES}",
+        "For type=score: {\"label\": one of the criteria list items, \"confidence\": 0..1}",
+        "If a field does not apply, still answer with the neutral option (\"none\") and low confidence.",
+        "",
+    ]
+    for k, q in questions.items():
+        if q["type"] == "choice":
+            keys = ", ".join(q["criteria"].keys())
+            lines.append(f"- {k} (choice): {q['instructions']} Options: {keys}")
+        elif q["type"] == "noul":
+            lines.append(f"- {k} (noul): {q['instructions']}")
+        elif q["type"] == "score":
+            labels = ", ".join(q["criteria"])
+            lines.append(f"- {k} (score): {q['instructions']} Labels: {labels}")
+    lines += ["", "User said:", text]
+    return "\n".join(lines)
+
+
 def jev(text, questions=None):
+    """Jev fan-out via a free OpenRouter model (was TypeSafe). Same return shape: {id: (value, confidence)}."""
+    qs = questions or QUESTIONS
     t = time.time()
-    r = requests.post("https://api.typesafe.ai/v1/systemone", json={"model": "jev-latest", "state": text, "questions": questions or QUESTIONS},
-                      headers={"Authorization": f"Bearer {TS_KEY}"}, timeout=30)
+    r = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {OR_KEY}"},
+        json={
+            "model": JEV_MODEL,
+            "max_tokens": 400,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": "You are a strict JSON classifier. No prose."},
+                {"role": "user", "content": _questions_prompt(qs, text)},
+            ],
+        },
+        timeout=30,
+    )
     r.raise_for_status()
     j = r.json()
+    content = j["choices"][0]["message"]["content"]
+    # strip ```json fences if the model wraps them
+    content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip(), flags=re.M)
+    raw = json.loads(content)
     ans = {}
-    for k, a in j["answers"].items():
-        if a["type"] == "noul":  # probability, confidence is distance from 0.5
-            ans[k] = (a["noul"] >= 0.5, max(a["noul"], 1 - a["noul"]))
-        elif a["type"] == "score":  # index into the rubric, legend maps it back to the label
-            ans[k] = (a["legend"][str(int(round(a["score"])))], a.get("confidence", 0))
+    for k, q in qs.items():
+        a = raw.get(k) or {}
+        if q["type"] == "noul":
+            p = float(a.get("noul", 0.5))
+            p = min(1.0, max(0.0, p))
+            ans[k] = (p >= 0.5, max(p, 1 - p))
+        elif q["type"] == "score":
+            labels = list(q["criteria"])
+            lab = str(a.get("label", labels[0])).strip().lower()
+            if lab not in labels:
+                # nearest match by substring
+                hit = next((x for x in labels if x in lab or lab in x), labels[0])
+                lab = hit
+            ans[k] = (lab, float(a.get("confidence", 0.7)))
         else:
-            ans[k] = (a["choice"], a.get("confidence", 0))
-    cost = j.get("usage", {}).get("input_tokens", 0) * 0.042 / 1e6 
+            keys = list(q["criteria"].keys())
+            ch = str(a.get("choice", "none")).strip().lower()
+            if ch not in keys:
+                hit = next((x for x in keys if x in ch or ch in x), "none")
+                ch = hit
+            ans[k] = (ch, float(a.get("confidence", 0.6)))
+    usage = j.get("usage", {})
+    # free models bill $0; keep a rough token cost only if you switch to a paid model
+    cost = usage.get("total_tokens", 0) * 0.0
     return ans, int((time.time() - t) * 1000), cost
 
 
@@ -999,8 +1061,8 @@ def main():
         from assistant_ui import run_app
         run_app()
         return
-    if not TS_KEY or not FISH_KEY:
-        sys.exit("need TYPESAFE_API_KEY and FISH_AUDIO_API_KEY in Keychain or .env")
+    if not OR_KEY or not FISH_KEY:
+        sys.exit("need OPENROUTER_API_KEY and FISH_AUDIO_API_KEY in Keychain or .env")
     if args.text:
         handle(args.text)
         return

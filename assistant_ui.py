@@ -66,15 +66,15 @@ HOW_TO = ("“Hey Jev, open Spotify” runs a command. In Hold Option mode, hold
           "Say “stop transcribing” and it pastes where your cursor is.")
 PRIVACY = (
     ("Stays on your Mac", "Everything the mic hears. Whisper listens for \u201cHey Jev\u201d on your Mac and throws away anything that isn't for her. Your dictionary, dictation history and logs stay in this folder and ~/Library/Logs."),
-    ("TypeSafe (Jev)  \u00b7  text", "Only the words after \u201cHey Jev\u201d, like \u201copen Spotify\u201d, to work out what to do."),
-    ("OpenRouter or OpenAI  \u00b7  audio", "Dictation audio, only between \u201ctranscribe\u201d and \u201cstop transcribing\u201d. It goes to OpenAI directly if you added that key, otherwise through OpenRouter. Questions that aren't commands go to Claude Haiku on OpenRouter as text."),
+    ("OpenRouter (Jev)  ·  text", "Only the words after \u201cHey Jev\u201d, like \u201copen Spotify\u201d, to work out what to do."),
+    ("OpenRouter or OpenAI  ·  audio", "Dictation audio, only between \u201ctranscribe\u201d and \u201cstop transcribing\u201d. It goes to OpenAI directly if you added that key, otherwise through OpenRouter. Questions that aren't commands go to Claude Haiku on OpenRouter as text."),
     ("Fish Audio  \u00b7  text", "The text of her replies, to turn into her voice. Scripted replies are saved after the first time, so most are never sent again."),
 )
 KEY_ROWS = (
-    ("TypeSafe", "TYPESAFE_API_KEY", "Jev, decides what each command means"),
+    ("OpenRouter", "OPENROUTER_API_KEY", "Jev (command intent) and questions — use a free :free model via JEV_MODEL"),
     ("Fish Audio", "FISH_AUDIO_API_KEY", "Her voice"),
-    ("OpenRouter", "OPENROUTER_API_KEY", "Questions, and dictation when there's no OpenAI key"),
     ("OpenAI", "OPENAI_API_KEY", "Optional, sends dictation straight to OpenAI"),
+    ("TypeSafe", "TYPESAFE_API_KEY", "Optional legacy — unused by this free build"),
 )
 
 STATUS_COLORS = {
